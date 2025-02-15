@@ -370,15 +370,14 @@
 # """, unsafe_allow_html=True)
 import streamlit as st
 
-# Set page configuration immediately after importing Streamlit
+# Set page configuration immediately after importing Streamlit.
 st.set_page_config(
-    page_title="Your App Title",
-    page_icon=":sparkles:",
+    page_title="StudentShowcase Content Summarizer",
+    page_icon="🎓",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Now continue with other imports and your app logic
 import pymongo
 import os
 import bcrypt
@@ -439,12 +438,40 @@ if GOOGLE_API_KEY:
 else:
     st.warning("GOOGLE_API_KEY not provided. Google Generative AI functionalities may be disabled.")
 
-# Continue with the rest of your app logic...
+# --------------------------------------------------
+# Inject Custom CSS
+# --------------------------------------------------
+st.markdown(
+    """
+    <style>
+    .main { background-color: #f0f2f6; }
+    .stApp { max-width: 1200px; margin: 0 auto; }
+    .stTextArea textarea { height: 100px; }
+    .stButton>button {
+        background-color: #4CAF50; color: white; padding: 10px 20px;
+        font-size: 16px; border-radius: 5px; border: none; transition: all 0.3s ease;
+    }
+    .stButton>button:hover { background-color: #45a049; }
+    .css-1v0mbdj.etr89bj1 {
+        display: flex; justify-content: center; align-items: center;
+        border: 2px dashed #4CAF50; border-radius: 10px; padding: 20px;
+    }
+    .tab-content { padding: 20px; border: 1px solid #ddd; border-radius: 0 0 5px 5px; }
+    </style>
+    """, unsafe_allow_html=True
+)
+
+# --------------------------------------------------
+# Session State for Authentication
+# --------------------------------------------------
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "user" not in st.session_state:
+    st.session_state.user = {}
 
 # --------------------------------------------------
 # Helper Functions for Authentication & Storage
 # --------------------------------------------------
-
 def get_user_by_email(email):
     """Fetch a user document by email."""
     return db.users.find_one({"email": email})
@@ -483,7 +510,6 @@ def save_summary(user_id, summary_type, input_data, result_text):
 # --------------------------------------------------
 # Summarization Helper Functions
 # --------------------------------------------------
-
 def convert_timestamp_to_seconds(ts):
     parts = ts.split(':')
     parts = [int(p) for p in parts]
@@ -551,43 +577,6 @@ def initialize_agent():
     )
 
 multimodal_Agent = initialize_agent()
-
-# --------------------------------------------------
-# Streamlit Page Configuration and CSS
-# --------------------------------------------------
-st.set_page_config(
-    page_title="StudentShowcase Content Summarizer",
-    page_icon="🎓",
-    layout="wide"
-)
-
-st.markdown(
-    """
-    <style>
-    .main { background-color: #f0f2f6; }
-    .stApp { max-width: 1200px; margin: 0 auto; }
-    .stTextArea textarea { height: 100px; }
-    .stButton>button {
-        background-color: #4CAF50; color: white; padding: 10px 20px;
-        font-size: 16px; border-radius: 5px; border: none; transition: all 0.3s ease;
-    }
-    .stButton>button:hover { background-color: #45a049; }
-    .css-1v0mbdj.etr89bj1 {
-        display: flex; justify-content: center; align-items: center;
-        border: 2px dashed #4CAF50; border-radius: 10px; padding: 20px;
-    }
-    .tab-content { padding: 20px; border: 1px solid #ddd; border-radius: 0 0 5px 5px; }
-    </style>
-    """, unsafe_allow_html=True
-)
-
-# --------------------------------------------------
-# Session State for Authentication
-# --------------------------------------------------
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-if "user" not in st.session_state:
-    st.session_state.user = {}
 
 # --------------------------------------------------
 # Authentication Forms (Login / Sign Up)
