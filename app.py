@@ -23,12 +23,15 @@ from phi.tools.duckduckgo import DuckDuckGo
 import google.generativeai as genai
 from google.generativeai import upload_file, get_file
 
+# PDF generation library
+from fpdf import FPDF
+
 # --------------------------
 # Set page configuration
 # --------------------------
 st.set_page_config(
-    page_title="StudentShowcase Content Summarizer",
-    page_icon="🎓",
+    page_title="QuickSummarizer",
+    page_icon="🔥",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -196,12 +199,93 @@ def extract_text_from_url(url):
         return f"Error extracting text from URL: {str(e)}"
 
 # --------------------------
+# PDF Helper Functions
+# --------------------------
+# The create_pdf function remains the same
+def create_pdf(title, content):
+    class PDF(FPDF):
+        def header(self):
+            self.set_font("Arial", 'B', 16)
+            self.cell(0, 10, self.sanitize_text(title), ln=True, align='C')
+            self.ln(10)
+
+        def footer(self):
+            self.set_y(-15)
+            self.set_font('Arial', 'I', 8)
+            self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+
+        def sanitize_text(self, text):
+            # Replace problematic characters with their closest ASCII equivalents
+            replacements = {
+                ''': "'",
+                ''': "'",
+                '"': '"',
+                '"': '"',
+                '—': '-',
+                '–': '-',
+                '…': '...',
+                '\u0101': 'a',  # ā
+                '\u0113': 'e',  # ē
+                '\u012B': 'i',  # ī
+                '\u014D': 'o',  # ō
+                '\u016B': 'u',  # ū
+            }
+            for old, new in replacements.items():
+                text = text.replace(old, new)
+            # Remove any remaining non-Latin1 characters
+            return ''.join(char for char in text if ord(char) < 256)
+
+        def chapter_body(self, content):
+            self.set_font("Arial", size=12)
+            # Split content into paragraphs and process each
+            paragraphs = content.split('\n')
+            for paragraph in paragraphs:
+                if paragraph.strip():  # Skip empty paragraphs
+                    sanitized_para = self.sanitize_text(paragraph)
+                    self.multi_cell(0, 10, sanitized_para)
+                    self.ln()
+
+    # Create PDF instance
+    pdf = PDF()
+    pdf.add_page()
+    pdf.chapter_body(content)
+    
+    try:
+        return pdf.output(dest="S").encode("latin1")
+    except Exception as e:
+        # Fallback handling if encoding still fails
+        st.error(f"Error creating PDF: {str(e)}")
+        return None
+    
+
+
+def sanitize_filename(name):
+    # Remove characters that are not alphanumeric, spaces, hyphens, or underscores.
+    name = re.sub(r'[^\w\s-]', '', name)
+    name = name.strip().replace(' ', '_')
+    return name
+
+
+
+# --------------------------
+# Delete Summary 
+# --------------------------
+def delete_summary(summary_id):
+    """Delete a specific summary from the database"""
+    try:
+        result = db.summaries.delete_one({"_id": summary_id})
+        return result.deleted_count > 0
+    except Exception as e:
+        print(f"Error deleting summary: {e}")
+        return False
+
+# --------------------------
 # Summarization Agent Initialization
 # --------------------------
 @st.cache_resource
 def initialize_agent():
     return Agent(
-        name="StudentShowcase Content Summarizer",
+        name="QuickSummarizer",
         model=Gemini(id="gemini-2.0-flash-exp"),
         tools=[DuckDuckGo()],
         markdown=True,
@@ -213,7 +297,7 @@ multimodal_Agent = initialize_agent()
 # Authentication Forms (Login / Sign Up)
 # --------------------------
 def show_auth():
-    st.title("🎓 StudentShowcase Content Summarizer")
+    st.title("🔥 QuickSummarizer")
     st.subheader("Login or Sign Up to Continue")
     tabs = st.tabs(["Login", "Sign Up"])
 
@@ -268,10 +352,10 @@ def main_app():
         st.session_state.user = {}
         st.success("You have been logged out.")
     elif nav == "Summarize":
-        st.title("🎓 StudentShowcase Content Summarizer")
+        st.title("🔥 QuickSummarizer")
         st.markdown(
             """
-            Welcome to the StudentShowcase Content Summarizer! Choose one of the options below to analyze your content:
+            Welcome to the QuickSummarizer! Choose one of the options below to analyze your content:
             - Project Videos
             - Web Pages
             - YouTube Videos
@@ -499,11 +583,52 @@ Provide the notes in a clear, organized, and concise manner.
         st.subheader("Your Past Summarizations")
         summaries = list(db.summaries.find({"user_id": user["_id"]}).sort("timestamp", -1))
         if summaries:
-            for summ in summaries:
-                st.markdown(f"**Type:** {summ['type'].capitalize()} | **On:** {summ['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
-                st.markdown(f"**Input:** {summ['input']}")
+            for idx, summ in enumerate(summaries):
+                # Create a unique key for this summary's container
+                summary_key = f"summary_{idx}_{summ['_id']}"
+                
+                # Create two columns for the summary header: one for info, one for buttons
+                col1, col2 = st.columns([3, 1])
+                
+                with col1:
+                    st.markdown(f"**Type:** {summ['type'].capitalize()} | **On:** {summ['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
+                    st.markdown(f"**Input:** {summ['input']}")
+                
+                with col2:
+                    # Create a container for buttons to keep them aligned
+                    button_container = st.container()
+                    with button_container:
+                        # Delete button with confirmation
+                        if st.button("🗑️ Delete", key=f"delete_btn_{summary_key}"):
+                            st.warning("Are you sure you want to delete this summary?")
+                            col3, col4 = st.columns(2)
+                            with col3:
+                                if st.button("✔️ Yes", key=f"confirm_delete_{summary_key}"):
+                                    if delete_summary(summ['_id']):
+                                        st.success("Summary deleted successfully!")
+                                        st.rerun()  # Refresh the page to show updated list
+                                    else:
+                                        st.error("Failed to delete summary. Please try again.")
+                            with col4:
+                                if st.button("❌ No", key=f"cancel_delete_{summary_key}"):
+                                    st.rerun()  # Refresh the page to remove confirmation dialog
+
+                # Show the summary content in an expander
                 with st.expander("View Summary"):
                     st.markdown(summ['result'])
+                
+                # Create a PDF download button for the summary with unique key
+                title = summ['input']
+                pdf_bytes = create_pdf(title, summ['result'])
+                if pdf_bytes:  # Only create download button if PDF generation was successful
+                    filename = f"{sanitize_filename(title)}.pdf"
+                    st.download_button(
+                        "📥 Download PDF",
+                        data=pdf_bytes,
+                        file_name=filename,
+                        mime="application/pdf",
+                        key=f"download_btn_{summary_key}"
+                    )
                 st.markdown("---")
         else:
             st.info("You haven't generated any summaries yet.")
@@ -515,8 +640,8 @@ Provide the notes in a clear, organized, and concise manner.
     st.markdown(
         """
         <div style="text-align: center; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: white;">
-            <h4>🎓 StudentShowcase Content Summarizer</h4>
-            <p>Powered by <strong>Gemini 2.0 Flash Exp</strong> | Developed for student success</p>
+            <h4>QuickSummarizer</h4>
+            <p>Powered by <strong>Gemini 2.0 Flash Exp</strong> | Developed for students</p>
             <p>
                 Made by 
                 <a href="https://github.com/VarunSingh19" target="_blank" style="color: white;">
@@ -531,7 +656,6 @@ Provide the notes in a clear, organized, and concise manner.
 # --------------------------
 # Main Entry Point
 # --------------------------
-# When the script runs, check the session state.
 if st.session_state.logged_in:
     main_app()
 else:
