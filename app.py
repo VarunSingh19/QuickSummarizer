@@ -368,16 +368,24 @@
 #     </p>
 # </div>
 # """, unsafe_allow_html=True)
-
-
 import streamlit as st
+
+# Set page configuration immediately after importing Streamlit
+st.set_page_config(
+    page_title="Your App Title",
+    page_icon=":sparkles:",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Now continue with other imports and your app logic
 import pymongo
 import os
 import bcrypt
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
-from dotenv import load_dotenv  # Using python-dotenv
+from dotenv import load_dotenv  # using python-dotenv
 from datetime import datetime
 import tempfile
 import time
@@ -398,7 +406,7 @@ import google.generativeai as genai
 # --------------------------------------------------
 # Load environment variables and configure APIs
 # --------------------------------------------------
-load_dotenv()  # This loads the variables from a .env file into the environment
+load_dotenv()
 
 # MongoDB Configuration
 MONGODB_URI = os.getenv("MONGODB_URI")
@@ -407,7 +415,7 @@ if not MONGODB_URI:
     st.stop()
 
 client = pymongo.MongoClient(MONGODB_URI)
-db = client["studentshowcase_db"]  # Use your desired database name
+db = client["studentshowcase_db"]
 
 # Cloudinary Configuration
 CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME")
