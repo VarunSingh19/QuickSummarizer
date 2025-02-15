@@ -233,7 +233,7 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 Developed by **VarunSingh19**
 
 - GitHub: [VarunSingh19](https://github.com/VarunSingh19)
-- Email: [your-email@example.com](mailto:varunsinghh2409@gmail.com)
+- Email: [varunsinghh2409@gmail.com](mailto:varunsinghh2409@gmail.com)
 
 For any questions or suggestions, feel free to open an issue or contact me directly.
 
