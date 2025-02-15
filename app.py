@@ -377,7 +377,7 @@ import bcrypt
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # Using python-dotenv
 from datetime import datetime
 import tempfile
 import time
@@ -398,24 +398,40 @@ import google.generativeai as genai
 # --------------------------------------------------
 # Load environment variables and configure APIs
 # --------------------------------------------------
-load_dotenv()
+load_dotenv()  # This loads the variables from a .env file into the environment
 
 # MongoDB Configuration
-MONGODB_URI = os.getenv("MONGODB_URI")  # e.g., "mongodb+srv://<user>:<password>@cluster.mongodb.net"
+MONGODB_URI = os.getenv("MONGODB_URI")
+if not MONGODB_URI:
+    st.error("MONGODB_URI not found in environment variables.")
+    st.stop()
+
 client = pymongo.MongoClient(MONGODB_URI)
-db = client["studentshowcase_db"]  # Database name
+db = client["studentshowcase_db"]  # Use your desired database name
 
 # Cloudinary Configuration
+CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME")
+API_KEY_CLD = os.getenv("CLOUDINARY_API_KEY")
+API_SECRET_CLD = os.getenv("CLOUDINARY_API_SECRET")
+
+if not (CLOUD_NAME and API_KEY_CLD and API_SECRET_CLD):
+    st.error("Cloudinary configuration variables are missing.")
+    st.stop()
+
 cloudinary.config(
-    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
-    api_key=os.getenv("CLOUDINARY_API_KEY"),
-    api_secret=os.getenv("CLOUDINARY_API_SECRET"),
+    cloud_name=CLOUD_NAME,
+    api_key=API_KEY_CLD,
+    api_secret=API_SECRET_CLD,
 )
 
-# Google Generative AI API Key
-API_KEY = os.getenv("GOOGLE_API_KEY")
-if API_KEY:
-    genai.configure(api_key=API_KEY)
+# Google Generative AI API Key Configuration
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+if GOOGLE_API_KEY:
+    genai.configure(api_key=GOOGLE_API_KEY)
+else:
+    st.warning("GOOGLE_API_KEY not provided. Google Generative AI functionalities may be disabled.")
+
+# Continue with the rest of your app logic...
 
 # --------------------------------------------------
 # Helper Functions for Authentication & Storage
