@@ -42,7 +42,7 @@ load_dotenv()
 # MongoDB Configuration (Remote Atlas)
 # --------------------------
 MONGODB_URI = "mongodb+srv://nextcrudtodo:varunsingh21@cluster09.8ytep.mongodb.net/?retryWrites=true&w=majority&appName=Cluster09"
-client = pymongo.MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
+client = pymongo.MongoClient(MONGODB_URI, serverSelectionTimeoutMS=10000)
 try:
     print(client.server_info())  # Forces a call to the server
     print("Connected successfully!")
