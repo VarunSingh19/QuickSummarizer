@@ -1,9 +1,6 @@
-````markdown
 # QuickSummarizer
 
 **QuickSummarizer** is an interactive Streamlit web application designed to help students and educators analyze and summarize various types of content—including project videos, web pages, and YouTube videos—using advanced AI-powered summarization techniques. The app features user authentication, profile management, and data storage via MongoDB, and leverages external APIs (such as Cloudinary and Google Generative AI) for enhanced functionality.
-
----
 
 ## Table of Contents
 
@@ -97,7 +94,6 @@ The application is built using the following core components:
 git https://github.com/VarunSingh19/QuickSummarizer
 cd QuickSummarizer
 ```
-````
 
 ### Create and Activate a Virtual Environment
 
@@ -131,7 +127,7 @@ _If you don’t have a `requirements.txt` yet, you can create one by listing the
 
 ## Configuration
 
-1. **Environment Variables:**  
+1. **Environment Variables:**
    Create a `.env` file in the project root and add the following variables:
 
    ```ini
@@ -147,13 +143,13 @@ _If you don’t have a `requirements.txt` yet, you can create one by listing the
    GOOGLE_API_KEY="your_google_api_key"
    ```
 
-2. **MongoDB:**  
+2. **MongoDB:**
    Update the `MONGODB_URI` in your `.env` with your MongoDB connection string. If using MongoDB Atlas, ensure your IP address is whitelisted.
 
-3. **Cloudinary:**  
+3. **Cloudinary:**
    Set up your Cloudinary account and update the credentials in the `.env` file.
 
-4. **Google Generative AI:**  
+4. **Google Generative AI:**
    If you wish to enable Google Generative AI functionalities, add your API key. Otherwise, the app will run with limited AI functionality.
 
 ---
@@ -244,3 +240,7 @@ For any questions or suggestions, feel free to open an issue or contact me direc
 ---
 
 > _Empowering students with AI-driven insights to enhance their academic projects and presentations._
+
+```
+
+```
