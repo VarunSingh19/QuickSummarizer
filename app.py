@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pymongo
 import os
@@ -15,6 +16,10 @@ from bs4 import BeautifulSoup
 from pytube import YouTube
 from youtube_transcript_api import YouTubeTranscriptApi
 from pathlib import Path
+import PyPDF2
+import io
+from typing import Dict, List
+import json
 
 # Summarization agent libraries
 from phi.agent import Agent
@@ -47,9 +52,9 @@ load_dotenv()
 MONGODB_URI = "mongodb+srv://nextcrudtodo:varunsingh21@cluster09.8ytep.mongodb.net/?retryWrites=true&w=majority&appName=Cluster09"
 client = pymongo.MongoClient(MONGODB_URI, serverSelectionTimeoutMS=10000)
 try:
-    print(client.server_info())  # Forces a call to the server
+    print(client.server_info())
     print("Connected successfully!")
-    db = client["studentshowcase_db"]  # Select your database here
+    db = client["studentshowcase_db"]
 except Exception as e:
     print("Unable to connect:", e)
     st.error("Database connection error.")
@@ -95,6 +100,19 @@ st.markdown(
         font-size: 16px; border-radius: 5px; border: none; transition: all 0.3s ease;
     }
     .stButton>button:hover { background-color: #45a049; }
+    .chat-message {
+        padding: 1.5rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+        display: flex;
+        flex-direction: column;
+    }
+    .user-message {
+        background-color: #e3f2fd;
+    }
+    .assistant-message {
+        background-color: #f5f5f5;
+    }
     </style>
     """, unsafe_allow_html=True
 )
@@ -106,6 +124,10 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "user" not in st.session_state:
     st.session_state.user = {}
+if "current_pdf_id" not in st.session_state:
+    st.session_state.current_pdf_id = None
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 
 # --------------------------
 # Helper Functions for Authentication & Storage
@@ -134,12 +156,69 @@ def update_profile_pic(user_id, profile_pic_url):
 def save_summary(user_id, summary_type, input_data, result_text):
     doc = {
         "user_id": user_id,
-        "type": summary_type,  # "video", "web", or "youtube"
+        "type": summary_type,
         "input": input_data,
         "result": result_text,
         "timestamp": datetime.utcnow()
     }
     db.summaries.insert_one(doc)
+
+# --------------------------
+# PDF Related Functions
+# --------------------------
+def save_pdf_to_db(user_id, pdf_name, pdf_content, pdf_text):
+    """Save PDF and its extracted text to database"""
+    doc = {
+        "user_id": user_id,
+        "pdf_name": pdf_name,
+        "pdf_content": pdf_content,
+        "pdf_text": pdf_text,
+        "timestamp": datetime.utcnow()
+    }
+    return db.pdfs.insert_one(doc)
+
+def get_user_pdfs(user_id):
+    """Get all PDFs for a user"""
+    return list(db.pdfs.find({"user_id": user_id}))
+
+def save_pdf_chat(user_id, pdf_id, question, answer):
+    """Save chat history to database"""
+    doc = {
+        "user_id": user_id,
+        "pdf_id": pdf_id,
+        "question": question,
+        "answer": answer,
+        "timestamp": datetime.utcnow()
+    }
+    return db.pdf_chats.insert_one(doc)
+
+def get_pdf_chats(pdf_id):
+    """Get chat history for a specific PDF"""
+    return list(db.pdf_chats.find({"pdf_id": pdf_id}).sort("timestamp", 1))
+
+def extract_text_from_pdf(pdf_file) -> str:
+    """Extract text from uploaded PDF file"""
+    try:
+        pdf_reader = PyPDF2.PdfReader(pdf_file)
+        text = ""
+        for page in pdf_reader.pages:
+            text += page.extract_text() + "\n"
+        return text
+    except Exception as e:
+        st.error(f"Error extracting text from PDF: {str(e)}")
+        return ""
+
+def process_pdf_for_chat(pdf_text: str, chunk_size: int = 1000) -> List[str]:
+    """Split PDF text into chunks of approximately `chunk_size` words."""
+    words = pdf_text.split()
+    chunks = []
+    for i in range(0, len(words), chunk_size):
+        chunk = " ".join(words[i:i+chunk_size])
+        chunks.append(chunk)
+    return chunks
+
+
+
 
 # --------------------------
 # Summarization Helper Functions
@@ -245,22 +324,31 @@ def create_pdf(title, content):
                     self.multi_cell(0, 10, sanitized_para)
                     self.ln()
 
-    # Create PDF instance
-    pdf = PDF()
-    pdf.add_page()
-    pdf.chapter_body(content)
-    
     try:
-        return pdf.output(dest="S").encode("latin1")
+        # Create PDF instance
+        pdf = PDF()
+        pdf.add_page()
+        pdf.chapter_body(content)
+        
+        # Get the PDF as bytes
+        pdf_output = pdf.output(dest='S')
+        
+        # Convert to bytes if necessary
+        if isinstance(pdf_output, str):
+            pdf_bytes = pdf_output.encode('latin-1')
+        elif isinstance(pdf_output, bytearray):
+            pdf_bytes = bytes(pdf_output)
+        else:
+            pdf_bytes = pdf_output
+            
+        return pdf_bytes
+        
     except Exception as e:
-        # Fallback handling if encoding still fails
         st.error(f"Error creating PDF: {str(e)}")
         return None
-    
-
 
 def sanitize_filename(name):
-    # Remove characters that are not alphanumeric, spaces, hyphens, or underscores.
+    # Remove characters that are not alphanumeric, spaces, hyphens, or underscores
     name = re.sub(r'[^\w\s-]', '', name)
     name = name.strip().replace(' ', '_')
     return name
@@ -293,64 +381,131 @@ def initialize_agent():
 
 multimodal_Agent = initialize_agent()
 
-# --------------------------
-# Authentication Forms (Login / Sign Up)
-# --------------------------
-def show_auth():
-    st.title("🔥 QuickSummarizer")
-    st.subheader("Login or Sign Up to Continue")
-    tabs = st.tabs(["Login", "Sign Up"])
-
-    with tabs[0]:
-        st.subheader("Login")
-        login_email = st.text_input("Email", key="login_email")
-        login_password = st.text_input("Password", type="password", key="login_password")
-        if st.button("Login"):
-            user = get_user_by_email(login_email)
-            if user and bcrypt.checkpw(login_password.encode(), user["password"].encode()):
-                st.session_state.logged_in = True
-                st.session_state.user = user
-                st.success("Logged in successfully!")
-                # (The next run will show the main app)
-            else:
-                st.error("Invalid credentials. Please try again.")
-
-    with tabs[1]:
-        st.subheader("Sign Up")
-        signup_username = st.text_input("Username", key="signup_username")
-        signup_email = st.text_input("Email", key="signup_email")
-        signup_password = st.text_input("Password", type="password", key="signup_password")
-        signup_confirm_password = st.text_input("Confirm Password", type="password", key="signup_confirm_password")
-        profile_pic = st.file_uploader("Upload Profile Picture (optional)", type=["png", "jpg", "jpeg"], key="signup_profile_pic")
-        if st.button("Sign Up"):
-            if signup_password != signup_confirm_password:
-                st.error("Passwords do not match.")
-            else:
-                profile_pic_url = ""
-                if profile_pic:
-                    try:
-                        upload_result = cloudinary.uploader.upload(profile_pic)
-                        profile_pic_url = upload_result.get("secure_url", "")
-                    except Exception as e:
-                        st.error(f"Profile picture upload failed: {e}")
-                user, error = create_user(signup_username, signup_email, signup_password, profile_pic_url)
-                if error:
-                    st.error(error)
-                else:
-                    st.session_state.logged_in = True
-                    st.session_state.user = user
-                    st.success("Signed up successfully!")
-                    # (The next run will show the main app)
+# [Previous helper functions remain the same...]
 
 # --------------------------
-# Main App (shown only when logged in)
+# PDF Chat Tab Function
+# --------------------------
+def show_pdf_chat_tab():
+    st.header("📚 Chat with PDF")
+    
+    # Create columns for upload and PDF selection
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        pdf_file = st.file_uploader(
+            "Upload a new PDF file", 
+            type=['pdf'],
+            help="Upload a PDF document to chat with"
+        )
+    
+    with col2:
+        # Show existing PDFs
+        user_pdfs = get_user_pdfs(st.session_state.user["_id"])
+        if user_pdfs:
+            pdf_names = ["Select a PDF..."] + [pdf["pdf_name"] for pdf in user_pdfs]
+            selected_pdf = st.selectbox("Or select an existing PDF", pdf_names)
+            if selected_pdf != "Select a PDF...":
+                selected_pdf_doc = next((pdf for pdf in user_pdfs if pdf["pdf_name"] == selected_pdf), None)
+                if selected_pdf_doc:
+                    st.session_state.current_pdf_id = selected_pdf_doc["_id"]
+    
+    # Process new PDF upload
+    if pdf_file:
+        with st.spinner("Processing new PDF..."):
+            pdf_text = extract_text_from_pdf(pdf_file)
+            if pdf_text:
+                pdf_content = pdf_file.getvalue()
+                db_result = save_pdf_to_db(
+                    st.session_state.user["_id"],
+                    pdf_file.name,
+                    pdf_content,
+                    pdf_text
+                )
+                st.session_state.current_pdf_id = db_result.inserted_id
+                st.success("PDF processed successfully!")
+                st.rerun()  # Refresh to show the new PDF in the selection
+    
+    # Chat interface
+    if st.session_state.current_pdf_id:
+        st.subheader("Chat with your PDF")
+        
+        # Create a chat message container
+        chat_container = st.container()
+        
+        # Display chat history
+        with chat_container:
+            chat_history = get_pdf_chats(st.session_state.current_pdf_id)
+            for chat in chat_history:
+                with st.container():
+                    st.markdown(
+                        f"""<div class="chat-message user-message">
+                            <strong>You:</strong><br>{chat['question']}
+                        </div>""",
+                        unsafe_allow_html=True
+                    )
+                    st.markdown(
+                        f"""<div class="chat-message assistant-message">
+                            <strong>Assistant:</strong><br>{chat['answer']}
+                        </div>""",
+                        unsafe_allow_html=True
+                    )
+        
+        # Chat input area
+        st.markdown("---")
+        user_question = st.text_area(
+            "Ask a question about your PDF:",
+            height=100,
+            key="pdf_chat_input"
+        )
+        
+        if st.button("Send", key="send_pdf_question"):
+            if user_question:
+                with st.spinner("Generating response..."):
+                    # Get the PDF text from database
+                    pdf_doc = db.pdfs.find_one({"_id": st.session_state.current_pdf_id})
+                    pdf_text = pdf_doc["pdf_text"]
+                    
+                    # Create the prompt for the AI
+                    chat_prompt = f"""
+Based on the following PDF content, please answer this question:
+{user_question}
+
+Relevant PDF content:
+{pdf_text[:5000]}
+
+Please provide a detailed and accurate response based solely on the information contained in the PDF.
+                    """
+                    
+                    # Get response from AI
+                    response = multimodal_Agent.run(chat_prompt)
+                    
+                    # Save the chat to database
+                    save_pdf_chat(
+                        st.session_state.user["_id"],
+                        st.session_state.current_pdf_id,
+                        user_question,
+                        response.content
+                    )
+                    
+                    # Refresh the page to show new message
+                    st.rerun()
+    
+    else:
+        st.info("👆 Upload a new PDF or select an existing one to start chatting!")
+
+# --------------------------
+# Main App
 # --------------------------
 def main_app():
     nav = st.sidebar.radio("Navigation", ["Summarize", "Profile", "Logout"])
+    
     if nav == "Logout":
         st.session_state.logged_in = False
         st.session_state.user = {}
         st.success("You have been logged out.")
+        st.rerun()
+    
     elif nav == "Summarize":
         st.title("🔥 QuickSummarizer")
         st.markdown(
@@ -359,11 +514,19 @@ def main_app():
             - Project Videos
             - Web Pages
             - YouTube Videos
+            - PDF Documents
             """
         )
-        tab1, tab2, tab3 = st.tabs(["📹 Video Upload", "🌐 Web Page", "🎥 YouTube Video"])
-
-        # --- Tab 1: Video Upload ---
+        
+        # Create tabs including the new PDF chat tab
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "📹 Video Upload",
+            "🌐 Web Page",
+            "🎥 YouTube Video",
+            "📚 Chat with PDF"
+        ])
+        
+         # --- Tab 1: Video Upload ---
         with tab1:
             st.header("📤 Upload Your Project Video")
             video_file = st.file_uploader(
@@ -552,6 +715,10 @@ Provide the notes in a clear, organized, and concise manner.
                     except Exception as error:
                         st.error(f"😕 An error occurred during YouTube video summarization: {error}")
 
+        
+        with tab4:
+            show_pdf_chat_tab()
+    
     elif nav == "Profile":
         st.title("👤 Your Profile")
         user = st.session_state.user
@@ -620,38 +787,68 @@ Provide the notes in a clear, organized, and concise manner.
                 # Create a PDF download button for the summary with unique key
                 title = summ['input']
                 pdf_bytes = create_pdf(title, summ['result'])
-                if pdf_bytes:  # Only create download button if PDF generation was successful
-                    filename = f"{sanitize_filename(title)}.pdf"
-                    st.download_button(
-                        "📥 Download PDF",
-                        data=pdf_bytes,
-                        file_name=filename,
-                        mime="application/pdf",
-                        key=f"download_btn_{summary_key}"
-                    )
-                st.markdown("---")
-        else:
-            st.info("You haven't generated any summaries yet.")
+                if pdf_bytes is not None:  # Only create download button if PDF generation was successful
+                    try:
+                        filename = f"{sanitize_filename(title)}.pdf"
+                        st.download_button(
+                            "📥 Download PDF",
+                            data=pdf_bytes,
+                            file_name=filename,
+                            mime="application/pdf",
+                            key=f"download_btn_{summary_key}"
+                        )
+                    except Exception as e:
+                        st.error(f"Error creating download button: {str(e)}")
 
-    # --------------------------
-    # Footer
-    # --------------------------
-    st.markdown("---")
-    st.markdown(
-        """
-        <div style="text-align: center; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: white;">
-            <h4>QuickSummarizer</h4>
-            <p>Powered by <strong>Gemini 2.0 Flash Exp</strong> | Developed for students</p>
-            <p>
-                Made by 
-                <a href="https://github.com/VarunSingh19" target="_blank" style="color: white;">
-                    <img src="https://img.icons8.com/ios-glyphs/30/ffffff/github.png" style="vertical-align: middle; margin-right: 8px;"/>
-                    VarunSingh19
-                </a>
-            </p>
-        </div>
-        """, unsafe_allow_html=True
-    )
+
+# --------------------------
+# Authentication Forms
+# --------------------------
+def show_auth():
+    st.title("🔥 QuickSummarizer")
+    st.subheader("Login or Sign Up to Continue")
+    tabs = st.tabs(["Login", "Sign Up"])
+
+    with tabs[0]:
+        st.subheader("Login")
+        login_email = st.text_input("Email", key="login_email")
+        login_password = st.text_input("Password", type="password", key="login_password")
+        if st.button("Login"):
+            user = get_user_by_email(login_email)
+            if user and bcrypt.checkpw(login_password.encode(), user["password"].encode()):
+                st.session_state.logged_in = True
+                st.session_state.user = user
+                st.success("Logged in successfully!")
+                # (The next run will show the main app)
+            else:
+                st.error("Invalid credentials. Please try again.")
+
+    with tabs[1]:
+        st.subheader("Sign Up")
+        signup_username = st.text_input("Username", key="signup_username")
+        signup_email = st.text_input("Email", key="signup_email")
+        signup_password = st.text_input("Password", type="password", key="signup_password")
+        signup_confirm_password = st.text_input("Confirm Password", type="password", key="signup_confirm_password")
+        profile_pic = st.file_uploader("Upload Profile Picture (optional)", type=["png", "jpg", "jpeg"], key="signup_profile_pic")
+        if st.button("Sign Up"):
+            if signup_password != signup_confirm_password:
+                st.error("Passwords do not match.")
+            else:
+                profile_pic_url = ""
+                if profile_pic:
+                    try:
+                        upload_result = cloudinary.uploader.upload(profile_pic)
+                        profile_pic_url = upload_result.get("secure_url", "")
+                    except Exception as e:
+                        st.error(f"Profile picture upload failed: {e}")
+                user, error = create_user(signup_username, signup_email, signup_password, profile_pic_url)
+                if error:
+                    st.error(error)
+                else:
+                    st.session_state.logged_in = True
+                    st.session_state.user = user
+                    st.success("Signed up successfully!")
+                    # (The next run will show the main app)
 
 # --------------------------
 # Main Entry Point
@@ -660,3 +857,23 @@ if st.session_state.logged_in:
     main_app()
 else:
     show_auth()
+
+# --------------------------
+# Footer
+# --------------------------
+st.markdown("---")
+st.markdown(
+    """
+    <div style="text-align: center; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: white;">
+        <h4>QuickSummarizer</h4>
+        <p>Powered by <strong>Gemini 2.0 Flash Exp</strong> | Developed for students</p>
+        <p>
+            Made by 
+            <a href="https://github.com/VarunSingh19" target="_blank" style="color: white;">
+                <img src="https://img.icons8.com/ios-glyphs/30/ffffff/github.png" style="vertical-align: middle; margin-right: 8px;"/>
+                VarunSingh19
+            </a>
+        </p>
+    </div>
+    """, unsafe_allow_html=True
+)
