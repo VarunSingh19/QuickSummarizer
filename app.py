@@ -29,7 +29,7 @@ import google.generativeai as genai
 from google.generativeai import upload_file, get_file
 
 # PDF generation library
-from fpdf import FPDF
+from fpdf2 import FPDF
 
 # --------------------------
 # Set page configuration
