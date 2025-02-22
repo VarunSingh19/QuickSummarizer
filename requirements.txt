@@ -21,3 +21,4 @@ pymongo
 bcrypt
 cloudinary
 fpdf
+PyPDF2
