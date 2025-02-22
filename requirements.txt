@@ -20,3 +20,4 @@ youtube_transcript_api
 pymongo
 bcrypt
 cloudinary
+fpdf
