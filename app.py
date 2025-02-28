@@ -615,7 +615,7 @@ Format this as a professional nutritional report with clear sections and bullet 
         st.info("👆 Upload a food image to begin analysis, or see a sample report below.")
         
         with st.expander("See a sample food analysis report"):
-            st.image("assets\sample_food\meal.jpg", caption="Sample food image")
+            st.image("https://res.cloudinary.com/dvbw76boh/image/upload/v1740741871/bsvodawasjdqccixzge1.jpg", caption="Sample food image")
             st.markdown("""
             ## Sample Food Analysis Report
             
